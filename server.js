@@ -17,6 +17,10 @@ import dashboardRoutes from "./routes/dashboardRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
 import commsRoutes from "./routes/commsRoutes.js";
 
+import User from "./models/User.js";
+import Settings from "./models/Settings.js";
+import LeaveType from "./models/LeaveType.js";
+
 const app = express();
 
 app.use(cors());
@@ -68,6 +72,34 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-connectDB().then(() => {
+// Seeds a demo Admin login (and company Settings) on a fresh database so the
+// hosted demo always has a working login — never overwrites an existing
+// setup. Controlled via ADMIN_EMAIL / ADMIN_PASSWORD / COMPANY_NAME env vars,
+// falling back to fixed demo values if those aren't set.
+async function ensureDemoAdmin() {
+  try {
+    const adminExists = await User.exists({ role: "admin" });
+    const settingsExist = await Settings.getSingleton();
+    if (adminExists && settingsExist) return; // already set up, don't touch it
+
+    if (!adminExists) {
+      const email = process.env.ADMIN_EMAIL || "admin@demo.com";
+      const password = process.env.ADMIN_PASSWORD || "demo1234";
+      await User.create({ name: "Demo Admin", email, password, role: "admin" });
+      console.log(`Seeded default admin login: ${email}`);
+    }
+    if (!settingsExist) {
+      await Settings.create({ companyName: process.env.COMPANY_NAME || "Demo Company" });
+      await LeaveType.seedDefaults();
+      console.log("Seeded default company settings and leave types.");
+    }
+  } catch (err) {
+    // Never let seeding crash the server — worst case, Setup page still works manually.
+    console.error("Demo admin seeding failed:", err.message);
+  }
+}
+
+connectDB().then(async () => {
+  await ensureDemoAdmin();
   app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 });
